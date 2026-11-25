@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+:root {
+  --cream: #fbf8f2;
+  --paper: #fffdf9;
+  --ink: #25241e;
+  --muted: #77756c;
+  --orange: #e85f24;
+  --orange-dark: #c94b18;
+  --olive: #657346;
+  --line: #e9e3d8;
+}
+
+@theme inline {
+  --color-background: var(--cream);
+  --color-foreground: var(--ink);
+  --font-sans: Arial, Helvetica, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+a,
+input {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  color: white;
+  background: var(--orange);
+}
+
+.serif {
+  font-family: Georgia, "Times New Roman", serif;
+  letter-spacing: -0.045em;
+}
+
+.food-photo {
+  background-position: center;
+  background-size: cover;
+}
+
+.soft-shadow {
+  box-shadow: 0 18px 50px rgba(48, 37, 22, 0.09);
+}
+
+.grain {
+  background-image: radial-gradient(rgba(111, 84, 47, 0.1) 0.55px, transparent 0.55px);
+  background-size: 7px 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
