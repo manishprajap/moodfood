@@ -3,20 +3,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
+import { getUploadDirectory } from "@/lib/upload-directory";
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
 type ImageExtension = "jpg" | "png" | "webp";
-
-/**
- * Resolve the upload directory dynamically at runtime.
- * This prevents uploaded images from being treated as build assets.
- */
-function getUploadDirectory(): string {
-  return path.resolve(
-    process.env.UPLOAD_DIRECTORY || path.join(process.cwd(), "uploads"),
-  );
-}
 
 /**
  * Detect actual image format from bytes.
@@ -144,14 +135,14 @@ export async function POST(request: Request) {
 
     // 7. Generate random filename
     const fileName = `${randomBytes(16).toString("hex")}.${extension}`;
-
-    // 8. Resolve directory at runtime
     const uploadDirectory = getUploadDirectory();
 
-    // 9. Create directory if missing
-    await mkdir(uploadDirectory, { recursive: true });
+    // 8. Ensure upload directory exists
+    await mkdir(uploadDirectory, {
+      recursive: true,
+    });
 
-    // 10. Save file
+    // 9. Create absolute file path
     const filePath = path.join(uploadDirectory, fileName);
 
     await writeFile(filePath, bytes, {

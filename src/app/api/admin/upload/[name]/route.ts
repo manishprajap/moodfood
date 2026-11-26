@@ -1,22 +1,13 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { getUploadDirectory } from "@/lib/upload-directory";
 
 const CONTENT_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
   png: "image/png",
   webp: "image/webp",
 };
-
-function getUploadDirectory(): string {
-  const directory = process.env.UPLOAD_DIRECTORY;
-
-  if (!directory) {
-    throw new Error("UPLOAD_DIRECTORY environment variable is not configured.");
-  }
-
-  return path.resolve(directory);
-}
 
 export async function GET(
   _request: Request,

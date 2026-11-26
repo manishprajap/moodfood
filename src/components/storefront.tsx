@@ -345,10 +345,10 @@ function BrandMark({ compact = false }: { compact?: boolean }) {
       aria-label="Mood Food home"
     >
       <Image
-        src="/brand/mood-food-logo-transparent.png"
+        src="/brand/mood-food-logo-new.png"
         alt="Mood Food — Marinades, Kebabs, Curries"
-        width={532}
-        height={426}
+        width={956}
+        height={768}
         className={compact ? "h-[52px] w-auto" : "h-[58px] w-auto"}
         priority={!compact}
       />
@@ -1578,7 +1578,7 @@ export function Storefront({ page = "home" }: { page?: StorefrontPage }) {
           <Reveal className="relative mx-auto w-full max-w-[550px]">
             <div className="food-photo relative aspect-[1.2/1] rounded-[26px] bg-[#e8ddc8]" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=1200&q=85')" }} role="img" aria-label="A home-cooked dinner being prepared">
               <div className="absolute bottom-4 left-4 w-[104px] overflow-hidden rounded-xl border-2 border-white/80 shadow-lg sm:bottom-5 sm:left-5 sm:w-[120px]">
-                <Image src="/brand/mood-food-logo-transparent.png" alt="Mood Food brand logo" width={532} height={426} className="h-auto w-full" />
+                <Image src="/brand/mood-food-logo-new.png" alt="Mood Food brand logo" width={956} height={768} className="h-auto w-full" />
               </div>
             </div>
             <div className="anim-float absolute -bottom-4 -right-2 grid h-[116px] w-[116px] place-items-center rounded-full border-[5px] border-[#fff] bg-[#eee2f2] text-center sm:-right-4 sm:h-[136px] sm:w-[136px]">
