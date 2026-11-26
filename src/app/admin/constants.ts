@@ -48,3 +48,4 @@ export const SUCCESS_STATUSES = ["captured", "success", "processed"];
 export const TX_STATUSES = ["created", "authorized", "captured", "success", "failed", "processed", "pending", "refunded"];
 export const TX_PROVIDERS = ["phonepe", "razorpay", "cod", "manual"];
 export const TRANSACTIONS_PER_PAGE = 10;
+export const ROWS_PER_PAGE = 10;

@@ -3,11 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CookingPot, Plus, Search } from "lucide-react";
 import ProductDialog from "../dialogs/product-dialog";
-
+import { PRODUCTS_PER_PAGE, suggestedBadges } from "../constants";
 import type { CategoryRecord, ProductRecord } from "../types";
 import { money, requestJson } from "../utils";
-import { PRODUCTS_PER_PAGE, suggestedBadges } from "../constants";
-
+import { Pencil, Trash2 } from "lucide-react";
 type ProductsSectionProps = {
   products: ProductRecord[];
   categories: CategoryRecord[];
@@ -90,7 +89,7 @@ export default function ProductsSection({ products, categories, loading, error, 
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#b0714f]">What’s cooking?</p>
           <h2 className="serif mt-2 text-3xl sm:text-4xl">The menu, your way.</h2>
-          <p className="mt-2 text-xs text-[#8b887e]">{products.length} items in your collection</p>
+          <p className="mt-2 text-sm text-[#8b887e]">{products.length} items in your collection</p>
         </div>
         <button type="button" onClick={() => setDialog({ product: null })} className="inline-flex items-center gap-2 rounded-full bg-[#e95e25] px-4 py-3 text-[10px] font-extrabold text-white transition hover:bg-[#c94b18]"><Plus size={15} /> Add a product</button>
       </div>
@@ -98,7 +97,7 @@ export default function ProductsSection({ products, categories, loading, error, 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <label className="flex min-w-[220px] items-center gap-2 rounded-xl border border-[#e5e0d6] bg-white px-3.5 py-2.5 text-[#8b887e] sm:w-[320px]">
           <Search size={15} />
-          <input value={search} onChange={(event) => { setSearch(event.target.value); setProductPage(1); }} className="w-full bg-transparent text-xs text-[#333229] outline-none" placeholder="Search products or categories" />
+          <input value={search} onChange={(event) => { setSearch(event.target.value); setProductPage(1); }} className="w-full bg-transparent text-sm text-[#333229] outline-none" placeholder="Search products or categories" />
         </label>
         <button type="button" onClick={onRefresh} className="rounded-lg border border-[#e5e0d6] bg-white px-3 py-2 text-[10px] font-bold text-[#69665c]">Refresh list</button>
       </div>
@@ -123,32 +122,50 @@ export default function ProductsSection({ products, categories, loading, error, 
                 )}
               </span>
               <div className="min-w-0">
-                <p className="truncate text-xs font-bold">{product.name}{product.badge && <span className="ml-2 rounded-full bg-[#f8ede5] px-2 py-0.5 text-[8px] font-extrabold uppercase tracking-wide text-[#c94b18]">{product.badge}</span>}</p>
+                <p className="truncate text-sm font-bold">{product.name}{product.badge && <span className="ml-2 rounded-full bg-[#f8ede5] px-2 py-0.5 text-[8px] font-extrabold uppercase tracking-wide text-[#c94b18]">{product.badge}</span>}</p>
                 <p className="mt-1 truncate text-[9px] text-[#8b887e]">{product.pack} · {product.vegetarian ? "Vegetarian" : "Non-vegetarian"}{product.frozen ? " · Frozen" : ""}</p>
               </div>
             </div>
-            <span className="text-[10px] text-[#69665c]">{product.category}</span>
-            <span className="text-[10px] text-[#69665c]">{product.cuisine}</span>
-            <span className="text-xs font-bold">{money(Number(product.price))}</span>
-            <span className={`w-fit rounded-full px-2.5 py-1 text-[9px] font-bold ${product.isActive ? "bg-[#eef2e7] text-[#61764a]" : "bg-[#f1eee8] text-[#8b887e]"}`}>{product.isActive ? "Live" : "Hidden"}</span>
+            <span className="text-[12px] text-[#69665c]">{product.category}</span>
+            <span className="text-[12px] text-[#69665c]">{product.cuisine}</span>
+            <span className="text-sm font-bold">{money(Number(product.price))}</span>
+            <span className={`w-fit rounded-full px-2.5 py-1 text-[12px] font-bold ${product.isActive ? "bg-[#eef2e7] text-[#61764a]" : "bg-[#f1eee8] text-[#8b887e]"}`}>{product.isActive ? "Live" : "Hidden"}</span>
             <div className="flex gap-2 md:justify-end">
-              <button type="button" onClick={() => setDialog({ product })} className="rounded-lg border border-[#e6e1d7] px-3 py-2 text-[9px] font-bold text-[#68665d] hover:border-[#d95720] hover:text-[#d95720]">Edit</button>
-              <button type="button" onClick={() => deleteProduct(product)} className="rounded-lg border border-[#eee1db] px-2.5 py-2 text-[9px] font-bold text-[#a44d36] hover:bg-[#fbefeb]">Delete</button>
+              <button
+                type="button"
+                onClick={() => setDialog({ product })}
+                title="Edit product"
+                aria-label="Edit product"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#e6e1d7] text-[#68665d] transition hover:border-[#d95720] hover:bg-[#fff5ef] hover:text-[#d95720]"
+              >
+                <Pencil size={16} />
+              </button>
+
+              {/* Delete Button */}
+              <button
+                type="button"
+                onClick={() => deleteProduct(product)}
+                title="Delete product"
+                aria-label="Delete product"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#eee1db] text-[#a44d36] transition hover:bg-[#fbefeb] hover:text-red-700"
+              >
+                <Trash2 size={16} />
+              </button>
             </div>
           </div>
         ))}
-        {filteredProducts.length === 0 && <div className="px-5 py-14 text-center text-xs text-[#8b887e]">{loading ? "Loading your products…" : products.length ? "No products match your search." : "No menu items yet. Add your first product to get started."}</div>}
+        {filteredProducts.length === 0 && <div className="px-5 py-14 text-center text-sm text-[#8b887e]">{loading ? "Loading your products…" : products.length ? "No products match your search." : "No menu items yet. Add your first product to get started."}</div>}
       </div>
 
       {filteredProducts.length > 0 && (
         <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#e8e4da] bg-[#fffdf9] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-[#8b887e]">
+          <p className="text-sm text-[#8b887e]">
             Showing <span className="font-bold text-[#333229]">{rangeStart}–{rangeEnd}</span> of <span className="font-bold text-[#333229]">{filteredProducts.length}</span> products
           </p>
           <div className="flex items-center justify-between gap-2 sm:justify-end">
-            <button type="button" onClick={() => setProductPage((page) => Math.max(1, page - 1))} disabled={currentProductPage <= 1} className="rounded-lg border border-[#e5e0d6] bg-white px-4 py-2 text-xs font-bold text-[#69665c] transition hover:border-[#d95720] hover:text-[#d95720] disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
-            <span className="min-w-[90px] text-center text-xs font-semibold text-[#69665c]">Page {currentProductPage} of {totalProductPages}</span>
-            <button type="button" onClick={() => setProductPage((page) => Math.min(totalProductPages, page + 1))} disabled={currentProductPage >= totalProductPages} className="rounded-lg border border-[#e5e0d6] bg-white px-4 py-2 text-xs font-bold text-[#69665c] transition hover:border-[#d95720] hover:text-[#d95720] disabled:cursor-not-allowed disabled:opacity-40">Next</button>
+            <button type="button" onClick={() => setProductPage((page) => Math.max(1, page - 1))} disabled={currentProductPage <= 1} className="rounded-lg border border-[#e5e0d6] bg-white px-4 py-2 text-sm font-bold text-[#69665c] transition hover:border-[#d95720] hover:text-[#d95720] disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+            <span className="min-w-[90px] text-center text-sm font-semibold text-[#69665c]">Page {currentProductPage} of {totalProductPages}</span>
+            <button type="button" onClick={() => setProductPage((page) => Math.min(totalProductPages, page + 1))} disabled={currentProductPage >= totalProductPages} className="rounded-lg border border-[#e5e0d6] bg-white px-4 py-2 text-sm font-bold text-[#69665c] transition hover:border-[#d95720] hover:text-[#d95720] disabled:cursor-not-allowed disabled:opacity-40">Next</button>
           </div>
         </div>
       )}

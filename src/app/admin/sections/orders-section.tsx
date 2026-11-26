@@ -1,9 +1,9 @@
 "use client";
 
 import { PackageCheck } from "lucide-react";
-import { statusLabels } from "../constants";
 import type { OrderRecord } from "../types";
 import { money, requestJson } from "../utils";
+import { statusLabels } from "../constants";
 
 type OrdersSectionProps = {
   orders: OrderRecord[];

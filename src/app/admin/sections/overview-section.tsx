@@ -1,9 +1,9 @@
 "use client";
 
 import { BarChart3, Clock3, CookingPot, PackageCheck, Plus, Settings2, Tag } from "lucide-react";
-import { statusLabels } from "../constants";
 import type { OrderRecord, ProductRecord, PromotionRecord, Section } from "../types";
 import { money } from "../utils";
+import { statusLabels } from "../constants";
 
 type OverviewSectionProps = {
   products: ProductRecord[];
