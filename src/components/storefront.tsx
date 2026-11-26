@@ -1810,7 +1810,7 @@ export function Storefront({ page = "home" }: { page?: StorefrontPage }) {
             )}
           </aside>
         </div>
-      )}
+      )}  
 
       {detailProduct && (
         <div className="anim-fade-in fixed inset-0 z-[60] grid place-items-center overflow-y-auto bg-[#35153b]/55 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="product-dialog-title">
