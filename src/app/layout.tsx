@@ -8,8 +8,8 @@ export const metadata: Metadata = {
   applicationName: "Mood Food",
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   icons: {
-    icon: "/brand/mood-food-logo-transparent.png",
-    apple: "/brand/mood-food-logo-transparent.png",
+    icon: "/brand/mood-food-logo-new.png",
+    apple: "/brand/mood-food-logo-new.png",
   },
   openGraph: {
     title: "Mood Food — Quick food for easy life",
