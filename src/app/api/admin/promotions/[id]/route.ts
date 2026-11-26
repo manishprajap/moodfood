@@ -6,6 +6,11 @@ import { isAdminAuthenticated } from "@/lib/admin-auth";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+function parseId(id: string) {
+  const value = Number(id);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
 export async function PATCH(request: Request, context: RouteContext) {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Sign in to manage promotions." }, { status: 401 });
@@ -23,7 +28,14 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    const result = await getDb().update(promotions).set({ enabled }).where(eq(promotions.id, id));
+    const promotionId = parseId(id);
+    if (promotionId === null) {
+      return NextResponse.json({ error: "Promotion not found." }, { status: 404 });
+    }
+    const result = await getDb()
+      .update(promotions)
+      .set({ enabled })
+      .where(eq(promotions.id, promotionId));
     if (result[0].affectedRows === 0) {
       return NextResponse.json({ error: "Promotion not found." }, { status: 404 });
     }
@@ -40,7 +52,11 @@ export async function DELETE(_request: Request, context: RouteContext) {
   }
   try {
     const { id } = await context.params;
-    await getDb().delete(promotions).where(eq(promotions.id, id));
+    const promotionId = parseId(id);
+    if (promotionId === null) {
+      return NextResponse.json({ error: "Promotion not found." }, { status: 404 });
+    }
+    await getDb().delete(promotions).where(eq(promotions.id, promotionId));
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Could not delete promotion:", error);

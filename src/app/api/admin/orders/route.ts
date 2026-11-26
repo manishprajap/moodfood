@@ -10,12 +10,15 @@ export async function GET() {
   }
   try {
     const db = getDb();
-    const records = await db.select().from(orders).orderBy(desc(orders.createdAt));
+    const records = await db
+      .select()
+      .from(orders)
+      .orderBy(desc(orders.createdAt), desc(orders.id));
     const ids = records.map((order) => order.id);
     const items = ids.length
       ? await db.select().from(orderItems).where(inArray(orderItems.orderId, ids))
       : [];
-    const itemsByOrder = new Map<string, typeof items>();
+    const itemsByOrder = new Map<number, typeof items>();
     for (const item of items) {
       const current = itemsByOrder.get(item.orderId) ?? [];
       current.push(item);

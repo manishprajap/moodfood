@@ -12,6 +12,11 @@ const updateSchema = z.object({
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+function parseId(id: string) {
+  const value = Number(id);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
 export async function PATCH(request: Request, context: RouteContext) {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Sign in to manage orders." }, { status: 401 });
@@ -24,9 +29,15 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
   try {
     const { id } = await context.params;
-    const [existing] = await getDb().select({ id: orders.id }).from(orders).where(eq(orders.id, id)).limit(1);
+    const orderId = parseId(id);
+    if (orderId === null) return NextResponse.json({ error: "Order not found." }, { status: 404 });
+    const [existing] = await getDb()
+      .select({ id: orders.id })
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
     if (!existing) return NextResponse.json({ error: "Order not found." }, { status: 404 });
-    await getDb().update(orders).set(input).where(eq(orders.id, id));
+    await getDb().update(orders).set(input).where(eq(orders.id, orderId));
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Could not update order:", error);

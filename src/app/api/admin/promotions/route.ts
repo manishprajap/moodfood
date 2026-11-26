@@ -1,6 +1,5 @@
-import { asc } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { randomUUID } from "node:crypto";
 import { getDb } from "@/db";
 import { promotions } from "@/db/schema";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
@@ -11,7 +10,10 @@ export async function GET() {
     return NextResponse.json({ error: "Sign in to manage promotions." }, { status: 401 });
   }
   try {
-    const records = await getDb().select().from(promotions).orderBy(asc(promotions.title));
+    const records = await getDb()
+      .select()
+      .from(promotions)
+      .orderBy(desc(promotions.createdAt), desc(promotions.id));
     return NextResponse.json({ promotions: records });
   } catch (error) {
     console.error("Could not load promotions:", error);
@@ -30,8 +32,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Check the promotion details and try again." }, { status: 400 });
   }
   try {
-    const id = randomUUID();
-    await getDb().insert(promotions).values({ ...input, id });
+    const [insertResult] = await getDb().insert(promotions).values(input);
+    const id = Number(insertResult.insertId);
     return NextResponse.json({ id }, { status: 201 });
   } catch (error) {
     console.error("Could not create promotion:", error);

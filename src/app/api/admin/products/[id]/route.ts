@@ -7,6 +7,11 @@ import { productInput } from "@/lib/admin-validation";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+function parseId(id: string) {
+  const value = Number(id);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
 export async function PUT(request: Request, context: RouteContext) {
   if (!(await isAdminAuthenticated())) {
     return NextResponse.json({ error: "Sign in to manage products." }, { status: 401 });
@@ -21,8 +26,10 @@ export async function PUT(request: Request, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    await getDb().update(products).set(input).where(eq(products.id, id));
-    const [updated] = await getDb().select().from(products).where(eq(products.id, id)).limit(1);
+    const productId = parseId(id);
+    if (productId === null) return NextResponse.json({ error: "Product not found." }, { status: 404 });
+    await getDb().update(products).set(input).where(eq(products.id, productId));
+    const [updated] = await getDb().select().from(products).where(eq(products.id, productId)).limit(1);
     if (!updated) return NextResponse.json({ error: "Product not found." }, { status: 404 });
     return NextResponse.json({ product: updated });
   } catch (error) {
@@ -42,7 +49,9 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    await getDb().delete(products).where(eq(products.id, id));
+    const productId = parseId(id);
+    if (productId === null) return NextResponse.json({ error: "Product not found." }, { status: 404 });
+    await getDb().delete(products).where(eq(products.id, productId));
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Could not delete product:", error);

@@ -1,10 +1,9 @@
-import { asc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { products } from "@/db/schema";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { productInput } from "@/lib/admin-validation";
-import { randomUUID } from "node:crypto";
 
 export async function GET() {
   if (!(await isAdminAuthenticated())) {
@@ -12,7 +11,10 @@ export async function GET() {
   }
 
   try {
-    const records = await getDb().select().from(products).orderBy(asc(products.name));
+    const records = await getDb()
+      .select()
+      .from(products)
+      .orderBy(desc(products.createdAt), desc(products.id));
     return NextResponse.json({ products: records });
   } catch (error) {
     console.error("Could not load products:", error);
@@ -37,8 +39,8 @@ export async function POST(request: Request) {
 
   try {
     const db = getDb();
-    const id = randomUUID();
-    await db.insert(products).values({ ...input, id });
+    const [insertResult] = await db.insert(products).values(input);
+    const id = Number(insertResult.insertId);
     const [created] = await db.select().from(products).where(eq(products.id, id)).limit(1);
     return NextResponse.json({ product: created }, { status: 201 });
   } catch (error) {

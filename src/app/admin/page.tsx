@@ -8,7 +8,9 @@ import {
   CircleAlert,
   Clock3,
   CookingPot,
+  ImagePlus,
   LayoutDashboard,
+  Layers3,
   LogOut,
   Menu,
   PackageCheck,
@@ -20,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Product } from "@/lib/catalog";
 
 type ProductFields = {
@@ -40,9 +42,9 @@ type ProductFields = {
   isActive: boolean;
 };
 
-type ProductRecord = ProductFields & Pick<Product, "nutrition"> & { id: string };
+type ProductRecord = ProductFields & Pick<Product, "nutrition"> & { id: number };
 type OrderRecord = {
-  id: string;
+  id: number;
   orderNumber: string;
   customerName: string;
   phone: string;
@@ -55,20 +57,34 @@ type OrderRecord = {
   items: { productName: string; quantity: number }[];
 };
 type PromotionRecord = {
-  id: string;
+  id: number;
   title: string;
   code: string | null;
   message: string;
   enabled: boolean;
 };
-type Section = "Overview" | "Products" | "Orders" | "Promotions";
+type CategoryRecord = {
+  id: number;
+  name: string;
+  slug: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+type Section =
+  | "Overview"
+  | "Products"
+  | "Categories"
+  | "Orders"
+  | "Promotions";
 type RequestResult<T> = T & { error?: string };
 
+// Cuisine is intentionally fixed to Awadhi; category is selected from admin-managed categories.
 const blankProduct: ProductFields = {
   name: "",
   slug: "",
-  category: "Kebabs",
-  cuisine: "House special",
+  category: "",
+  cuisine: "Awadhi",
   description: "",
   price: 0,
   pack: "500 g",
@@ -86,6 +102,13 @@ const blankNutrition = {
   carbohydratesGrams: "",
   fatGrams: "",
 };
+
+// Suggested badges. Any badge already used on a product in the database is added to this list automatically.
+const suggestedBadges = ["Hot", "Bestseller", "New", "Popular", "Chef's special", "Spicy"];
+const CUSTOM_OPTION = "__custom__";
+const STATIC_CUISINE = "Awadhi";
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 const statusLabels: Record<string, string> = {
   pending: "Pending",
@@ -108,8 +131,32 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<RequestR
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
-  const result = (await response.json()) as RequestResult<T>;
-  if (!response.ok) throw new Error(result.error || "Something went wrong. Please try again.");
+
+  // Read the response safely and show the API's actual validation message when available.
+  const raw = await response.text();
+  let result: RequestResult<T> & { message?: string; details?: unknown; issues?: unknown };
+  try {
+    result = (raw ? JSON.parse(raw) : {}) as RequestResult<T> & {
+      message?: string;
+      details?: unknown;
+      issues?: unknown;
+    };
+  } catch {
+    result = {} as RequestResult<T>;
+  }
+
+  if (!response.ok) {
+    const details = result.details ?? result.issues;
+    const detailText = typeof details === "string"
+      ? details
+      : details
+        ? JSON.stringify(details)
+        : "";
+    const message = result.error || result.message || detailText ||
+      (raw && !raw.startsWith("<") ? raw.slice(0, 300) : "") ||
+      `Request failed (${response.status}). Please check the product details.`;
+    throw new Error(message);
+  }
   return result;
 }
 
@@ -125,11 +172,14 @@ export default function AdminPage() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [section, setSection] = useState<Section>("Overview");
   const [products, setProducts] = useState<ProductRecord[]>([]);
+  const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [promotions, setPromotions] = useState<PromotionRecord[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [productPage, setProductPage] = useState(1);
+  const PRODUCTS_PER_PAGE = 10;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [productDialog, setProductDialog] = useState(false);
@@ -137,20 +187,36 @@ export default function AdminPage() {
   const [productForm, setProductForm] = useState<ProductFields>(blankProduct);
   const [nutritionDraft, setNutritionDraft] = useState(blankNutrition);
   const [savingProduct, setSavingProduct] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [badgeCustom, setBadgeCustom] = useState(false);
   const [promotionDialog, setPromotionDialog] = useState(false);
   const [promotionForm, setPromotionForm] = useState({ title: "", code: "", message: "" });
+  const [categoryDialog, setCategoryDialog] = useState(false);
+  const [categoryName, setCategoryName] = useState("");
+  const [categorySlug, setCategorySlug] = useState("");
+
+  const [savingCategory, setSavingCategory] = useState(false);
   const [mobileSidebar, setMobileSidebar] = useState(false);
 
   const loadAdminData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [productResult, orderResult, promotionResult] = await Promise.all([
+      const [
+        productResult,
+        categoryResult,
+        orderResult,
+        promotionResult,
+      ] = await Promise.all([
         requestJson<{ products: ProductRecord[] }>("/api/admin/products"),
+        requestJson<{ categories: CategoryRecord[] }>("/api/admin/categories"),
         requestJson<{ orders: OrderRecord[] }>("/api/admin/orders"),
         requestJson<{ promotions: PromotionRecord[] }>("/api/admin/promotions"),
       ]);
       setProducts(productResult.products);
+      setCategories(categoryResult.categories);
       setOrders(orderResult.orders);
       setPromotions(promotionResult.promotions);
     } catch (loadError) {
@@ -185,9 +251,30 @@ export default function AdminPage() {
       (product) =>
         !term ||
         product.name.toLowerCase().includes(term) ||
-        product.category.toLowerCase().includes(term),
+        product.category.toLowerCase().includes(term) ||
+        (product.cuisine ?? "").toLowerCase().includes(term),
     );
   }, [products, search]);
+
+  const totalProductPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE));
+  const currentProductPage = Math.min(productPage, totalProductPages);
+  const paginatedProducts = useMemo(() => {
+    const start = (currentProductPage - 1) * PRODUCTS_PER_PAGE;
+    return filteredProducts.slice(start, start + PRODUCTS_PER_PAGE);
+  }, [filteredProducts, currentProductPage]);
+  const productRangeStart = filteredProducts.length === 0 ? 0 : (currentProductPage - 1) * PRODUCTS_PER_PAGE + 1;
+  const productRangeEnd = Math.min(currentProductPage * PRODUCTS_PER_PAGE, filteredProducts.length);
+
+  // Badge options: suggested ones plus every badge already used in the database.
+  const badgeOptions = useMemo(
+    () => [
+      ...new Set([
+        ...suggestedBadges,
+        ...products.map((product) => product.badge?.trim()).filter((value): value is string => Boolean(value)),
+      ]),
+    ],
+    [products],
+  );
 
   const pendingOrders = orders.filter((order) => order.status === "pending").length;
   const livePromotions = promotions.filter((promotion) => promotion.enabled).length;
@@ -216,6 +303,7 @@ export default function AdminPage() {
     await fetch("/api/admin/logout", { method: "POST" });
     setAuthenticated(false);
     setProducts([]);
+    setCategories([]);
     setOrders([]);
     setPromotions([]);
     setSection("Overview");
@@ -223,8 +311,13 @@ export default function AdminPage() {
 
   function openNewProduct() {
     setEditingProduct(null);
-    setProductForm(blankProduct);
+    setProductForm({
+      ...blankProduct,
+      category: categories[0]?.name ?? "",
+      cuisine: STATIC_CUISINE,
+    });
     setNutritionDraft(blankNutrition);
+    setBadgeCustom(false);
     setProductDialog(true);
   }
 
@@ -232,6 +325,8 @@ export default function AdminPage() {
     setEditingProduct(product);
     setProductForm({
       ...product,
+      cuisine: STATIC_CUISINE,
+      image: product.image ?? "",
       badge: product.badge ?? null,
       ingredients: product.ingredients ?? null,
     });
@@ -245,7 +340,38 @@ export default function AdminPage() {
           }
         : blankNutrition,
     );
+    setBadgeCustom(false);
     setProductDialog(true);
+  }
+
+  async function uploadImage(file: File | undefined | null) {
+    if (!file) return;
+    setError("");
+    if (!IMAGE_TYPES.includes(file.type)) {
+      setError("Please choose a JPG, PNG or WebP image.");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError("That image is larger than 5 MB. Please choose a smaller one.");
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      // Let the browser set the multipart boundary for FormData.
+      const response = await fetch("/api/admin/upload", { method: "POST", body });
+      const result = (await response.json()) as { url?: string; error?: string };
+      if (!response.ok || !result.url) {
+        throw new Error(result.error || "The image could not be uploaded.");
+      }
+      setProductForm((current) => ({ ...current, image: result.url! }));
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "The image could not be uploaded.");
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
 
   async function saveProduct(event: React.FormEvent<HTMLFormElement>) {
@@ -273,7 +399,13 @@ export default function AdminPage() {
     try {
       const saved = await requestJson<{ product: ProductRecord }>(endpoint, {
         method: editingProduct ? "PUT" : "POST",
-        body: JSON.stringify({ ...productForm, nutrition }),
+        body: JSON.stringify({
+          ...productForm,
+          cuisine: STATIC_CUISINE,
+          image: productForm.image,
+          badge: productForm.badge?.trim() || null,
+          nutrition,
+        }),
       });
       if (editingProduct) {
         setProducts((current) =>
@@ -354,6 +486,28 @@ export default function AdminPage() {
     }
   }
 
+  async function addCategory(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingCategory(true);
+    setError("");
+    try {
+      const result = await requestJson<{ category: CategoryRecord }>("/api/admin/categories", {
+        method: "POST",
+        body: JSON.stringify({ name: categoryName, slug: categorySlug }),
+      });
+      setCategories((current) =>
+        [...current, result.category].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setCategoryName("");
+      setCategorySlug("");
+      setCategoryDialog(false);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "The category could not be saved.");
+    } finally {
+      setSavingCategory(false);
+    }
+  }
+
   async function togglePromotion(promotion: PromotionRecord) {
     try {
       await requestJson(`/api/admin/promotions/${promotion.id}`, {
@@ -421,7 +575,7 @@ export default function AdminPage() {
               {error && <p role="alert" className="rounded-xl bg-[#f8e6e1] px-4 py-3 text-xs leading-5 text-[#a64129]">{error}</p>}
               <button type="submit" disabled={loading} className="mt-1 flex items-center justify-center gap-2 rounded-full bg-[#e95e25] py-3.5 text-xs font-extrabold text-white transition hover:bg-[#c94b18] disabled:opacity-60">{loading ? "Signing in…" : "Sign in to your workspace"} <ArrowUpRight size={14} /></button>
             </form>
-            <p className="mt-5 text-[10px] leading-5 text-[#8b887e]">Set ADMIN_EMAIL, ADMIN_PASSWORD and ADMIN_SESSION_SECRET in your environment to enable access.</p>
+            <p className="mt-5 text-[10px] leading-5 text-[#8b887e]">Apply the database migrations and configure ADMIN_SESSION_SECRET to enable access.</p>
             {error && <p className="sr-only" aria-live="polite">{error}</p>}
           </div>
         </section>
@@ -432,6 +586,7 @@ export default function AdminPage() {
   const navItems: { name: Section; icon: typeof LayoutDashboard }[] = [
     { name: "Overview", icon: LayoutDashboard },
     { name: "Products", icon: UtensilsCrossed },
+    { name: "Categories", icon: Layers3 },
     { name: "Orders", icon: PackageCheck },
     { name: "Promotions", icon: Tag },
   ];
@@ -530,16 +685,33 @@ export default function AdminPage() {
                 <button type="button" onClick={openNewProduct} className="inline-flex items-center gap-2 rounded-full bg-[#e95e25] px-4 py-3 text-[10px] font-extrabold text-white transition hover:bg-[#c94b18]"><Plus size={15} /> Add a product</button>
               </div>
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <label className="flex min-w-[220px] items-center gap-2 rounded-xl border border-[#e5e0d6] bg-white px-3.5 py-2.5 text-[#8b887e] sm:w-[320px]"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} className="w-full bg-transparent text-xs text-[#333229] outline-none" placeholder="Search products or categories" /></label>
+                <label className="flex min-w-[220px] items-center gap-2 rounded-xl border border-[#e5e0d6] bg-white px-3.5 py-2.5 text-[#8b887e] sm:w-[320px]"><Search size={15} /><input value={search} onChange={(event) => { setSearch(event.target.value); setProductPage(1); }} className="w-full bg-transparent text-xs text-[#333229] outline-none" placeholder="Search products or categories" /></label>
                 <button type="button" onClick={loadAdminData} className="rounded-lg border border-[#e5e0d6] bg-white px-3 py-2 text-[10px] font-bold text-[#69665c]">Refresh list</button>
               </div>
               <div className="overflow-hidden rounded-2xl border border-[#e8e4da] bg-[#fffdf9]">
                 <div className="hidden grid-cols-[minmax(220px,1.3fr)_0.75fr_0.65fr_0.6fr_0.55fr_90px] gap-3 border-b border-[#efebe3] bg-[#faf8f3] px-5 py-3 text-[9px] font-extrabold uppercase tracking-[0.1em] text-[#979387] md:grid"><span>Product</span><span>Category</span><span>Cuisine</span><span>Price</span><span>Visibility</span><span /></div>
-                {filteredProducts.map((product) => (
+                {paginatedProducts.map((product) => (
                   <div key={product.id} className="grid gap-3 border-b border-[#f0ece4] px-4 py-4 last:border-b-0 sm:px-5 md:grid-cols-[minmax(220px,1.3fr)_0.75fr_0.65fr_0.6fr_0.55fr_90px] md:items-center">
                     <div className="flex items-center gap-3">
-                      <span className="h-12 w-12 shrink-0 rounded-xl bg-cover bg-center" style={{ backgroundImage: `url('${product.image}')` }} />
-                      <div className="min-w-0"><p className="truncate text-xs font-bold">{product.name}</p><p className="mt-1 truncate text-[9px] text-[#8b887e]">{product.pack} · {product.vegetarian ? "Vegetarian" : "Non-vegetarian"}{product.frozen ? " · Frozen" : ""}</p></div>
+                      <span className="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-[#f5efe4] text-[#b38762]">
+                        {product.image ? (
+                          <img
+                            src={product.image}
+                            alt={product.name}
+                            loading="lazy"
+                            className="absolute inset-0 h-full w-full object-cover"
+                            onError={(event) => {
+                              event.currentTarget.style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <CookingPot size={18} />
+                        )}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-bold">{product.name}{product.badge && <span className="ml-2 rounded-full bg-[#f8ede5] px-2 py-0.5 text-[8px] font-extrabold uppercase tracking-wide text-[#c94b18]">{product.badge}</span>}</p>
+                        <p className="mt-1 truncate text-[9px] text-[#8b887e]">{product.pack} · {product.vegetarian ? "Vegetarian" : "Non-vegetarian"}{product.frozen ? " · Frozen" : ""}</p>
+                      </div>
                     </div>
                     <span className="text-[10px] text-[#69665c]">{product.category}</span><span className="text-[10px] text-[#69665c]">{product.cuisine}</span><span className="text-xs font-bold">{money(Number(product.price))}</span>
                     <span className={`w-fit rounded-full px-2.5 py-1 text-[9px] font-bold ${product.isActive ? "bg-[#eef2e7] text-[#61764a]" : "bg-[#f1eee8] text-[#8b887e]"}`}>{product.isActive ? "Live" : "Hidden"}</span>
@@ -547,6 +719,60 @@ export default function AdminPage() {
                   </div>
                 ))}
                 {filteredProducts.length === 0 && <div className="px-5 py-14 text-center text-xs text-[#8b887e]">{loading ? "Loading your products…" : products.length ? "No products match your search." : "No menu items yet. Add your first product to get started."}</div>}
+              </div>
+              {filteredProducts.length > 0 && (
+                <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#e8e4da] bg-[#fffdf9] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs text-[#8b887e]">
+                    Showing <span className="font-bold text-[#333229]">{productRangeStart}–{productRangeEnd}</span> of <span className="font-bold text-[#333229]">{filteredProducts.length}</span> products
+                  </p>
+                  <div className="flex items-center justify-between gap-2 sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setProductPage((page) => Math.max(1, page - 1))}
+                      disabled={currentProductPage <= 1}
+                      className="rounded-lg border border-[#e5e0d6] bg-white px-4 py-2 text-xs font-bold text-[#69665c] transition hover:border-[#d95720] hover:text-[#d95720] disabled:cursor-not-allowed disabled:opacity-40"
+                    >Previous</button>
+                    <span className="min-w-[90px] text-center text-xs font-semibold text-[#69665c]">Page {currentProductPage} of {totalProductPages}</span>
+                    <button
+                      type="button"
+                      onClick={() => setProductPage((page) => Math.min(totalProductPages, page + 1))}
+                      disabled={currentProductPage >= totalProductPages}
+                      className="rounded-lg border border-[#e5e0d6] bg-white px-4 py-2 text-xs font-bold text-[#69665c] transition hover:border-[#d95720] hover:text-[#d95720] disabled:cursor-not-allowed disabled:opacity-40"
+                    >Next</button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {section === "Categories" && (
+            <>
+              <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#b0714f]">Organise your menu</p>
+                  <h2 className="serif mt-2 text-3xl sm:text-4xl">Categories.</h2>
+                  <p className="mt-2 text-xs text-[#8b887e]">{categories.length} categories in your collection</p>
+                </div>
+                <button type="button" onClick={() => setCategoryDialog(true)} className="inline-flex items-center gap-2 rounded-full bg-[#e95e25] px-4 py-3 text-[10px] font-extrabold text-white transition hover:bg-[#c94b18]"><Plus size={15} /> Add a category</button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {categories.map((category) => (
+                  <article key={category.id} className="rounded-2xl border border-[#e8e4da] bg-[#fffdf9] p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#f9e9dc] text-[#c76536]"><Layers3 size={18} /></span>
+                    </div>
+                    <h3 className="mt-5 text-sm font-extrabold">{category.name}</h3>
+                    <p className="mt-1 text-[10px] text-[#8b887e]">{category.slug}</p>
+                    <p className="mt-3 text-[10px] text-[#69665c]">{products.filter((product) => product.category === category.name).length} menu items</p>
+                  </article>
+                ))}
+                {categories.length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-[#dcd5c9] p-8 text-center sm:col-span-2 xl:col-span-3">
+                    <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#f5efe4] text-[#b38762]"><Layers3 size={20} /></span>
+                    <p className="mt-3 text-xs font-bold">No categories yet.</p>
+                    <p className="mt-1 text-[10px] text-[#8b887e]">Add a category to start organising your menu.</p>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -583,16 +809,89 @@ export default function AdminPage() {
         <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#211f1a]/50 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="product-form-title">
           <form onSubmit={saveProduct} className="my-auto w-full max-w-[680px] rounded-[22px] bg-[#fffdf9] shadow-2xl">
             <div className="flex items-center justify-between border-b border-[#efebe3] px-5 py-4 sm:px-7"><div><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#b0714f]">Your menu, your call</p><h2 id="product-form-title" className="serif mt-1 text-2xl">{editingProduct ? "Edit this dish" : "Add a new dish"}</h2></div><button type="button" onClick={() => setProductDialog(false)} className="grid h-9 w-9 place-items-center rounded-full border border-[#e9e3d8]" aria-label="Close product form"><X size={16} /></button></div>
+            {error && (
+              <div role="alert" className="mx-5 mt-4 flex items-start gap-2 rounded-xl border border-[#f1d5ca] bg-[#fbefeb] px-3.5 py-3 text-[11px] leading-5 text-[#99452c] sm:mx-7">
+                <CircleAlert className="mt-0.5 shrink-0" size={14} />
+                <span className="flex-1">{error}</span>
+              </div>
+            )}
             <div className="grid max-h-[68vh] gap-4 overflow-y-auto px-5 py-5 sm:grid-cols-2 sm:px-7">
               <Field label="Product name"><input required minLength={2} value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value, slug: makeSlug(event.target.value) })} className={inputClass} placeholder="e.g. Haryali kebab" /></Field>
               <Field label="URL slug"><input required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value={productForm.slug} onChange={(event) => setProductForm({ ...productForm, slug: event.target.value })} className={inputClass} placeholder="haryali-kebab" /></Field>
-              <Field label="Category"><select value={productForm.category} onChange={(event) => setProductForm({ ...productForm, category: event.target.value })} className={inputClass}>{["Kebabs", "Marinades", "Curries", "Snacks", "Starters", "Main course", "Breads and Raita"].map((item) => <option key={item}>{item}</option>)}</select></Field>
-              <Field label="Cuisine"><select value={productForm.cuisine} onChange={(event) => setProductForm({ ...productForm, cuisine: event.target.value })} className={inputClass}>{["House special", "Andhra", "Lucknowi", "Mughlai"].map((item) => <option key={item}>{item}</option>)}</select></Field>
+
+              <Field label="Category">
+                <select required value={productForm.category} onChange={(event) => setProductForm({ ...productForm, category: event.target.value })} className={inputClass}>
+                  <option value="" disabled>{categories.length ? "Select a category" : "Add a category first"}</option>
+                  {[...new Set([...categories.map((category) => category.name), productForm.category])].filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </Field>
+
+              <Field label="Cuisine">
+                <select value={STATIC_CUISINE} disabled className={inputClass}>
+                  <option value="Awadhi">Awadhi</option>
+                </select>
+                <p className="text-[10px] text-[#8b887e]">Cuisine is fixed to Awadhi.</p>
+              </Field>
+
               <Field label="Price (INR)"><input type="number" min="1" step="1" required value={productForm.price || ""} onChange={(event) => setProductForm({ ...productForm, price: Number(event.target.value) })} className={inputClass} placeholder="325" /></Field>
               <Field label="Pack size"><input required value={productForm.pack} onChange={(event) => setProductForm({ ...productForm, pack: event.target.value })} className={inputClass} placeholder="500 g" /></Field>
               <Field label="Pack weight (grams)"><input type="number" min="1" step="1" required value={productForm.weightGrams} onChange={(event) => setProductForm({ ...productForm, weightGrams: Number(event.target.value) })} className={inputClass} placeholder="500" /></Field>
-              <Field label="Product image URL"><input type="url" required value={productForm.image} onChange={(event) => setProductForm({ ...productForm, image: event.target.value })} className={inputClass} placeholder="https://…" /></Field>
-              <Field label="Optional menu badge"><input value={productForm.badge ?? ""} onChange={(event) => setProductForm({ ...productForm, badge: event.target.value || null })} className={inputClass} placeholder="Bestseller" /></Field>
+
+              <Field label="Menu badge (optional)">
+                <>
+                  <select
+                    value={badgeCustom ? CUSTOM_OPTION : productForm.badge ?? ""}
+                    onChange={(event) => {
+                      if (event.target.value === CUSTOM_OPTION) {
+                        setBadgeCustom(true);
+                        setProductForm({ ...productForm, badge: null });
+                      } else {
+                        setBadgeCustom(false);
+                        setProductForm({ ...productForm, badge: event.target.value || null });
+                      }
+                    }}
+                    className={inputClass}
+                  >
+                    <option value="">No badge</option>
+                    {badgeOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                    <option value={CUSTOM_OPTION}>+ Custom badge…</option>
+                  </select>
+                  {badgeCustom && (
+                    <input autoFocus maxLength={24} value={productForm.badge ?? ""} onChange={(event) => setProductForm({ ...productForm, badge: event.target.value || null })} className={inputClass} placeholder="e.g. Festival special" />
+                  )}
+                </>
+              </Field>
+
+              <div className="sm:col-span-2">
+                <p className="mb-2 text-[10px] font-bold text-[#545147]">Product image</p>
+                <div
+                  onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
+                  onDragLeave={() => setDragActive(false)}
+                  onDrop={(event) => { event.preventDefault(); setDragActive(false); void uploadImage(event.dataTransfer.files?.[0]); }}
+                  className={`relative flex min-h-[170px] flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed bg-[#faf8f3] p-4 transition ${dragActive ? "border-[#d95720] bg-orange-50" : "border-[#e3dccf]"}`}
+                >
+                  {productForm.image && (
+                    <div className="absolute inset-0 bg-cover bg-center opacity-25" style={{ backgroundImage: `url('${productForm.image.replace(/'/g, "%27")}')` }} aria-hidden="true" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingImage}
+                    className={`relative z-10 inline-flex flex-col items-center gap-1.5 rounded-xl px-4 py-3 text-center text-[10px] font-bold transition disabled:opacity-70 ${productForm.image ? "bg-white/90 text-[#38372f] shadow hover:bg-white" : "text-[#8b887e] hover:text-[#d95720]"}`}
+                  >
+                    <ImagePlus size={24} />
+                    {uploadingImage ? "Uploading…" : productForm.image ? "Replace image" : "Click or drop an image here"}
+                    {!productForm.image && !uploadingImage && <span className="font-normal text-[9px]">JPG, PNG or WebP · up to 5 MB</span>}
+                  </button>
+                  <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" tabIndex={-1} onChange={(event) => void uploadImage(event.target.files?.[0])} />
+                  {productForm.image && !uploadingImage && (
+                    <button type="button" onClick={() => setProductForm((current) => ({ ...current, image: "" }))} className="relative z-10 mt-2 rounded-full bg-white/90 px-3 py-1.5 text-[10px] font-bold text-[#a44d36] shadow hover:bg-white">Remove image</button>
+                  )}
+                </div>
+                {productForm.image && <div className="mt-3 overflow-hidden rounded-xl border border-[#e3dccf] bg-white"><img src={productForm.image} alt="Product preview" className="max-h-48 w-full object-contain" /></div>}
+                <p className="mt-2 text-[10px] leading-4 text-[#8b887e]">Choose a photo from your device or drag and drop it. The image uploads automatically. No image URL field.</p>
+              </div>
+
               <Field label="Short description" full><textarea rows={2} required value={productForm.description} onChange={(event) => setProductForm({ ...productForm, description: event.target.value })} className={`${inputClass} resize-y`} placeholder="Tell people what makes it lovely." /></Field>
               <Field label="Ingredients (optional)" full><textarea rows={2} value={productForm.ingredients ?? ""} onChange={(event) => setProductForm({ ...productForm, ingredients: event.target.value || null })} className={`${inputClass} resize-y`} placeholder="Add approved ingredient details." /></Field>
               <p className="text-[10px] font-bold text-[#545147] sm:col-span-2">Verified nutrition values per pack (optional)</p>
@@ -607,7 +906,7 @@ export default function AdminPage() {
               </div>
               <p className="text-[10px] leading-4 text-[#8b887e] sm:col-span-2">Use approved packaging values only. Enter all four nutrition values together or leave them blank.</p>
             </div>
-            <div className="flex justify-end gap-2 border-t border-[#efebe3] px-5 py-4 sm:px-7"><button type="button" onClick={() => setProductDialog(false)} className="rounded-full px-4 py-2.5 text-[10px] font-bold text-[#706d63] hover:bg-[#f7f5ef]">Cancel</button><button disabled={savingProduct} type="submit" className="inline-flex items-center gap-2 rounded-full bg-[#e95e25] px-5 py-2.5 text-[10px] font-extrabold text-white hover:bg-[#c94b18] disabled:opacity-60">{savingProduct ? "Saving…" : <><Check size={13} /> Save product</>}</button></div>
+            <div className="flex justify-end gap-2 border-t border-[#efebe3] px-5 py-4 sm:px-7"><button type="button" onClick={() => setProductDialog(false)} className="rounded-full px-4 py-2.5 text-[10px] font-bold text-[#706d63] hover:bg-[#f7f5ef]">Cancel</button><button disabled={savingProduct || uploadingImage} type="submit" className="inline-flex items-center gap-2 rounded-full bg-[#e95e25] px-5 py-2.5 text-[10px] font-extrabold text-white hover:bg-[#c94b18] disabled:opacity-60">{savingProduct ? "Saving…" : uploadingImage ? "Uploading image…" : <><Check size={13} /> Save product</>}</button></div>
           </form>
         </div>
       )}
@@ -618,6 +917,25 @@ export default function AdminPage() {
             <div className="mb-5 flex items-start justify-between"><div><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#b0714f]">A reason to celebrate</p><h2 id="promotion-form-title" className="serif mt-1 text-2xl">New promotion</h2></div><button type="button" onClick={() => setPromotionDialog(false)} className="grid h-9 w-9 place-items-center rounded-full border border-[#e9e3d8]" aria-label="Close promotion form"><X size={16} /></button></div>
             <div className="grid gap-4"><Field label="Campaign title"><input required value={promotionForm.title} onChange={(event) => setPromotionForm({ ...promotionForm, title: event.target.value })} className={inputClass} placeholder="Weekend dinner, sorted" /></Field><Field label="Discount code (optional)"><input value={promotionForm.code} onChange={(event) => setPromotionForm({ ...promotionForm, code: event.target.value.toUpperCase() })} className={`${inputClass} uppercase`} placeholder="GOODMOOD" /></Field><Field label="Campaign message"><textarea required rows={3} value={promotionForm.message} onChange={(event) => setPromotionForm({ ...promotionForm, message: event.target.value })} className={`${inputClass} resize-y`} placeholder="What should customers know?" /></Field></div>
             <div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setPromotionDialog(false)} className="rounded-full px-4 py-2.5 text-[10px] font-bold text-[#706d63] hover:bg-[#f7f5ef]">Cancel</button><button type="submit" className="rounded-full bg-[#e95e25] px-5 py-2.5 text-[10px] font-extrabold text-white hover:bg-[#c94b18]">Create promotion</button></div>
+          </form>
+        </div>
+      )}
+
+      {categoryDialog && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[#211f1a]/50 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="category-form-title">
+          <form onSubmit={addCategory} className="w-full max-w-[480px] rounded-[22px] bg-[#fffdf9] p-6 shadow-2xl sm:p-8">
+            <div className="mb-5 flex items-start justify-between">
+              <div><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-[#b0714f]">Menu organisation</p><h2 id="category-form-title" className="serif mt-1 text-2xl">Add a category</h2></div>
+              <button type="button" onClick={() => setCategoryDialog(false)} className="grid h-9 w-9 place-items-center rounded-full border border-[#e9e3d8]" aria-label="Close category form"><X size={16} /></button>
+            </div>
+            <div className="grid gap-4">
+              <Field label="Category name"><input required minLength={2} maxLength={80} value={categoryName} onChange={(event) => { setCategoryName(event.target.value); setCategorySlug(makeSlug(event.target.value)); }} className={inputClass} placeholder="e.g. Small plates" /></Field>
+              <Field label="URL slug"><input required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxLength={100} value={categorySlug} onChange={(event) => setCategorySlug(event.target.value)} className={inputClass} placeholder="small-plates" /></Field>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" onClick={() => setCategoryDialog(false)} className="rounded-full px-4 py-2.5 text-[10px] font-bold text-[#706d63] hover:bg-[#f7f5ef]">Cancel</button>
+              <button type="submit" disabled={savingCategory} className="rounded-full bg-[#e95e25] px-5 py-2.5 text-[10px] font-extrabold text-white hover:bg-[#c94b18] disabled:opacity-60">{savingCategory ? "Saving…" : "Save category"}</button>
+            </div>
           </form>
         </div>
       )}

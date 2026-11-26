@@ -16,6 +16,7 @@
   "dependencies": {
     "dotenv": "^18.0.10",
     "drizzle-orm": "^0.45.4",
+    "gsap": "^3.15.1",
     "jose": "^6.2.18",
     "lucide-react": "^1.80.0",
     "mysql2": "^3.24.6",

@@ -3,7 +3,6 @@ dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 import { eq } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { closeDb, getDb } from "./index";
 import { products as productRows } from "./schema";
 import { products } from "../lib/catalog";
@@ -20,7 +19,6 @@ async function seed() {
     if (existing) continue;
 
     await db.insert(productRows).values({
-      id: randomUUID(),
       name: product.name,
       slug: product.id,
       category: product.category,

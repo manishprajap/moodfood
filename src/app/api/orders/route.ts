@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/db";
@@ -87,13 +87,11 @@ export async function POST(request: Request) {
       (sum, entry) => sum + entry.product.price * entry.item.quantity,
       0,
     );
-    const orderId = randomUUID();
     const dateStamp = new Date().toISOString().slice(2, 10).replaceAll("-", "");
     const orderNumber = `MF${dateStamp}${randomBytes(3).toString("hex").toUpperCase()}`;
 
     await db.transaction(async (transaction) => {
-      await transaction.insert(orders).values({
-        id: orderId,
+      const [orderResult] = await transaction.insert(orders).values({
         orderNumber,
         customerName: input.customerName,
         phone: `+91${input.phone}`,
@@ -108,9 +106,9 @@ export async function POST(request: Request) {
         customerNote: input.customerNote?.trim() || null,
       });
 
+      const orderId = Number(orderResult.insertId);
       await transaction.insert(orderItems).values(
         selected.map(({ item, product }) => ({
-          id: randomUUID(),
           orderId,
           productId: product.id,
           productName: product.name,

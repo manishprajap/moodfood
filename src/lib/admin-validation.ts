@@ -1,5 +1,17 @@
 import { z } from "zod";
 
+const uploadedImagePath = /^\/api\/uploads\/[a-f0-9]{32}\.(jpg|png|webp)$/i;
+
+function isValidProductImage(value: string) {
+  if (value === "" || uploadedImagePath.test(value)) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export const productInput = z.object({
   name: z.string().trim().min(2).max(150),
   slug: z
@@ -17,7 +29,11 @@ export const productInput = z.object({
   vegetarian: z.boolean(),
   frozen: z.boolean(),
   badge: z.string().trim().max(80).nullable(),
-  image: z.string().trim().url().max(500),
+  image: z
+    .string()
+    .trim()
+    .max(500)
+    .refine(isValidProductImage, "Use an HTTP(S) image URL or upload an image."),
   ingredients: z.string().max(5000).nullable(),
   nutrition: z
     .object({
@@ -35,4 +51,18 @@ export const promotionInput = z.object({
   code: z.string().trim().max(40).nullable(),
   message: z.string().trim().min(3).max(2000),
   enabled: z.boolean(),
+});
+
+export const categoryInput = z.object({
+  name: z.string().trim().min(2).max(80),
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(100)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use lowercase letters, numbers, and hyphens."),
+});
+
+export const subcategoryInput = categoryInput.extend({
+  categoryId: z.coerce.number().int().positive(),
 });
