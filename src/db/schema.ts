@@ -312,3 +312,31 @@ export const cartDetails = mysqlTable(
     uniqueIndex("cart_details_cart_product_unique").on(table.cartId, table.productId),
   ],
 );
+
+
+export const whatsNew = mysqlTable(
+  "whats_new",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    title: varchar("title", { length: 255 }).notNull(),
+
+    description: text("description").notNull(),
+
+    version: varchar("version", { length: 50 }),
+
+
+
+    isPublished: boolean("is_published")
+      .notNull()
+      .default(true),
+
+     createdAt: timestamp("created_at").notNull().defaultNow(),
+    releasedAt: timestamp("released_at").notNull().defaultNow(),
+
+  },
+  (table) => ({
+    releasedAtIdx: index("whats_new_released_at_idx").on(table.releasedAt),
+    createdAtIdx: index("whats_new_created_at_idx").on(table.createdAt),
+  })
+);

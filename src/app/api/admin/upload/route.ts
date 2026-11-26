@@ -6,14 +6,21 @@ import { isAdminAuthenticated } from "@/lib/admin-auth";
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
-// Fixed upload location
-const UPLOAD_DIRECTORY = "D:\\moodfood\\uploads";
-
 type ImageExtension = "jpg" | "png" | "webp";
 
 /**
- * Detect image format from file bytes.
- * Do not trust the original filename or MIME type.
+ * Resolve the upload directory dynamically at runtime.
+ * This prevents uploaded images from being treated as build assets.
+ */
+function getUploadDirectory(): string {
+  return path.resolve(
+    process.env.UPLOAD_DIRECTORY || path.join(process.cwd(), "uploads"),
+  );
+}
+
+/**
+ * Detect actual image format from bytes.
+ * The original filename and MIME type are not trusted.
  */
 function detectExtension(bytes: Buffer): ImageExtension | null {
   // JPEG
@@ -39,7 +46,7 @@ function detectExtension(bytes: Buffer): ImageExtension | null {
         0x0a,
         0x1a,
         0x0a,
-      ])
+      ]),
     )
   ) {
     return "png";
@@ -59,7 +66,7 @@ function detectExtension(bytes: Buffer): ImageExtension | null {
 
 export async function POST(request: Request) {
   try {
-    // 1. Authenticate admin
+    // 1. Verify admin session
     const authenticated = await isAdminAuthenticated();
 
     if (!authenticated) {
@@ -68,11 +75,11 @@ export async function POST(request: Request) {
           success: false,
           error: "Please sign in again.",
         },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
-    // 2. Parse multipart form
+    // 2. Parse multipart form data
     const formData = await request.formData().catch(() => null);
 
     if (!formData) {
@@ -81,11 +88,11 @@ export async function POST(request: Request) {
           success: false,
           error: "Invalid upload request.",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    // 3. Get file
+    // 3. Extract image file
     const file = formData.get("file");
 
     if (!(file instanceof File)) {
@@ -94,7 +101,7 @@ export async function POST(request: Request) {
           success: false,
           error: "Please select an image.",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -105,7 +112,7 @@ export async function POST(request: Request) {
           success: false,
           error: "The uploaded image is empty.",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -115,14 +122,14 @@ export async function POST(request: Request) {
           success: false,
           error: "Image size must be 5 MB or smaller.",
         },
-        { status: 413 }
+        { status: 413 },
       );
     }
 
-    // 5. Read file bytes
+    // 5. Read bytes
     const bytes = Buffer.from(await file.arrayBuffer());
 
-    // 6. Validate actual image type
+    // 6. Validate actual image format
     const extension = detectExtension(bytes);
 
     if (!extension) {
@@ -131,22 +138,22 @@ export async function POST(request: Request) {
           success: false,
           error: "Only JPG, PNG and WebP images are supported.",
         },
-        { status: 415 }
+        { status: 415 },
       );
     }
 
-    // 7. Generate secure filename
+    // 7. Generate random filename
     const fileName = `${randomBytes(16).toString("hex")}.${extension}`;
 
-    // 8. Ensure upload directory exists
-    await mkdir(UPLOAD_DIRECTORY, {
-      recursive: true,
-    });
+    // 8. Resolve directory at runtime
+    const uploadDirectory = getUploadDirectory();
 
-    // 9. Create absolute file path
-    const filePath = path.join(UPLOAD_DIRECTORY, fileName);
+    // 9. Create directory if missing
+    await mkdir(uploadDirectory, { recursive: true });
 
-    // 10. Save image
+    // 10. Save file
+    const filePath = path.join(uploadDirectory, fileName);
+
     await writeFile(filePath, bytes, {
       flag: "wx",
     });
@@ -157,7 +164,7 @@ export async function POST(request: Request) {
       size: bytes.length,
     });
 
-    // 11. Return image URL
+    // 11. Return public image URL
     const imageUrl = `/api/uploads/${fileName}`;
 
     return NextResponse.json(
@@ -167,7 +174,7 @@ export async function POST(request: Request) {
         url: imageUrl,
         fileName,
       },
-      { status: 201 }
+      { status: 201 },
     );
   } catch (error) {
     console.error("[IMAGE UPLOAD ERROR]", error);
@@ -180,7 +187,7 @@ export async function POST(request: Request) {
             ? error.message
             : "Failed to upload image.",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
